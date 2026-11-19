@@ -22,7 +22,8 @@
       const s = await T.getState({ from: points.length });
       if (s.state === 'off') return;
       if (s.acc > 0 && s.posLat != null && s.posAge < 20000) {
-        MapView.setPosition(s.posLat, s.posLon, s.acc);
+        MapView.setPosition(s.posLat, s.posLon, s.acc, (s.speed > 0.8 && s.bearing != null) ? s.bearing : null);
+        updateIdleHint(s.acc);
         setGps(s.acc <= 15 ? 'ok' : 'weak', `${s.acc <= 15 ? 'Sinal bom' : 'Sinal fraco'} · ±${Math.round(s.acc)} m`);
       } else setGps('weak', s.gpsOn ? 'Procurando sinal… melhor ao ar livre' : 'Sem sinal');
       $('diag').className = 'diag';
@@ -36,7 +37,10 @@
       lastSplitMs = s.lastSplitMs; lastSplitDist = s.lastSplitDist;
       nat = { elapsed: s.elapsed, at: performance.now(), paceNow: s.paceNow == null ? NaN : s.paceNow };
       if (s.state !== state) { state = s.state; setButtons(); }
-      if (splits.length !== splitsLen) { splitsLen = splits.length; renderSplits(); }
+      if (splits.length !== splitsLen) {
+        if (splitsLen >= 0 && splits.length > splitsLen) { const l = splits[splits.length - 1]; showKmToast(l.km, l.ms); }
+        splitsLen = splits.length; renderSplits();
+      }
       render(); draw();
     } catch (_) {
     } finally { busy = false; }
@@ -91,31 +95,36 @@
   $('optVoice').onchange = () => T.setVoice({ voice: voice() }).catch(() => {});
 
   $('btnStart').onclick = async () => {
-    if (state === 'idle') {
-      if (!(await ready())) return;
-      points = []; splits = []; distance = 0; splitsLen = -1; renderSplits();
-      try { await T.start({ voice: voice() }); } catch (e) { alert('Não deu para começar: ' + (e.message || e)); return; }
-      enableMotion();
-    } else {
-      await T.resume({ voice: voice() });
-    }
+    if (state !== 'idle') return;
+    if (!(await ready())) return;
+    T.warmup().catch(() => {});
+    resetRun(); splitsLen = -1;
+    await runCountdown();                       // 3·2·1 com o mapa voando para a rua
+    try { await T.start({ voice: voice() }); } catch (e) { alert('Não deu para começar: ' + (e.message || e)); setUiState('idle'); return; }
+    enableMotion();
+    state = 'running'; nat = { elapsed: 0, at: performance.now(), paceNow: NaN };
+    setUiState('running'); startPoll();
+  };
+
+  $('btnResume').onclick = async () => {
+    await T.resume({ voice: voice() });
     state = 'running'; nat = { elapsed: nat.elapsed, at: performance.now(), paceNow: NaN };
-    setButtons(); startPoll();
+    MapView.recenter(); setUiState('running'); startPoll();
   };
 
   $('btnPause').onclick = async () => {
-    await T.pause(); state = 'paused'; setButtons(); pull();
+    await T.pause(); state = 'paused'; setUiState('paused'); pull();
   };
 
   $('btnStop').onclick = async () => {
-    if (!confirm('Encerrar a corrida?')) return;
     let r;
     try { r = await T.stop(); } catch (e) { alert('Não deu para encerrar: ' + (e.message || e)); return; }
-    state = 'idle'; setButtons();
+    state = 'idle';
     points = r.points || []; distance = r.distance; splits = r.splits || [];
     nat = { elapsed: r.elapsed, at: performance.now(), paceNow: NaN };
-    render(); draw();
+    draw();
     finishRun({ distance: r.distance, elapsed: r.elapsed, splits, points });
+    T.warmup().catch(() => {});                 // mantém o ponto azul no mapa
   };
 
   // ---------- ao abrir o app ----------

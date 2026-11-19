@@ -91,7 +91,7 @@ public class TrackingService extends Service implements LocationListener {
 
     // diagnóstico
     int recv = 0, used = 0, sats = 0, satsTotal = 0; float lastAcc = -1; String why = "";
-    double posLat, posLon; long posRt; boolean hasPos = false;
+    double posLat, posLon; long posRt; boolean hasPos = false; float posBearing = -1, posSpeed = 0;
 
     LocationManager lm;
     PowerManager.WakeLock wakeLock;
@@ -171,6 +171,7 @@ public class TrackingService extends Service implements LocationListener {
         long rt = loc.getElapsedRealtimeNanos() / 1_000_000L;
         lastAcc = acc;
         posLat = loc.getLatitude(); posLon = loc.getLongitude(); posRt = rt; hasPos = true;
+        posBearing = loc.hasBearing() ? loc.getBearing() : -1; posSpeed = loc.hasSpeed() ? loc.getSpeed() : 0;
         if (!"running".equals(state)) return;
         recv++;
 
@@ -359,7 +360,8 @@ public class TrackingService extends Service implements LocationListener {
             o.put("sats", sats); o.put("satsTotal", satsTotal);
             o.put("acc", lastAcc);
             o.put("gpsOn", gpsOn);
-            if (hasPos) { o.put("posLat", posLat); o.put("posLon", posLon); o.put("posAge", SystemClock.elapsedRealtime() - posRt); }
+            if (hasPos) { o.put("posLat", posLat); o.put("posLon", posLon); o.put("posAge", SystemClock.elapsedRealtime() - posRt);
+                o.put("speed", posSpeed); if (posBearing >= 0) o.put("bearing", posBearing); }
             o.put("splits", splitsJson());
             o.put("pointCount", points.size());
             o.put("points", pointsJson(Math.max(0, Math.min(fromPoint, points.size()))));

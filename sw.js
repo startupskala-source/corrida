@@ -1,7 +1,7 @@
 // Guarda só o app e o Leaflet; os quadradinhos do mapa NÃO (encheriam o celular).
-const CACHE = 'passada-v6';
-const FILES = ['./', 'index.html', 'manifest.json', 'icon.svg', 'css/app.css?v=6',
-  'js/map.js?v=6', 'js/store.js?v=6', 'js/history.js?v=6', 'js/capacitor.js?v=6', 'js/tracker.js?v=6', 'js/native.js?v=6',
+const CACHE = 'passada-v7';
+const FILES = ['./', 'index.html', 'manifest.json', 'icon.svg', 'css/app.css?v=7',
+  'js/map.js?v=7', 'js/store.js?v=7', 'js/history.js?v=7', 'js/capacitor.js?v=7', 'js/tracker.js?v=7', 'js/native.js?v=7',
   'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css', 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

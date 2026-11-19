@@ -9,95 +9,125 @@
 <title>passada</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
   integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-<link rel="stylesheet" href="css/app.css?v=6">
+<link rel="stylesheet" href="css/app.css?v=7">
 </head>
-<body data-view="viewRun">
-<header>
-  <h1 class="brand"><svg viewBox="96 110 330 290" aria-hidden="true"><path d="M132 362C196 362 214 236 280 236S360 150 384 150" fill="none" stroke="#A3C48A" stroke-width="38" stroke-linecap="round"/><circle cx="132" cy="362" r="26" fill="#EEECE6"/><circle cx="384" cy="150" r="36" fill="#A3C48A"/></svg>passada</h1>
-  <div id="gps"><i></i><span>Sem sinal</span></div>
-</header>
-<nav class="tabs">
-  <button class="tab on" data-view="viewRun">Correr</button>
-  <button class="tab" data-view="viewHistory">Histórico</button>
-</nav>
-<div id="diag" class="diag"></div>
+<body data-view="viewRun" data-rec="idle" data-mode="map">
 
-<main id="viewRun" class="view">
+<!-- ================= CORRER ================= -->
+<section id="viewRun" class="view">
+  <div id="map"></div>
+
+  <div class="top-bar">
+    <div class="brand"><svg viewBox="96 110 330 290" aria-hidden="true"><path d="M132 362C196 362 214 236 280 236S360 150 384 150" fill="none" stroke="#A3C48A" stroke-width="38" stroke-linecap="round"/><circle cx="132" cy="362" r="26" fill="#EEECE6"/><circle cx="384" cy="150" r="36" fill="#A3C48A"/></svg>passada</div>
+    <div id="gps" class="pill"><i></i><span>Sem sinal</span></div>
+  </div>
+  <div id="diag" class="diag"></div>
   <div id="setup" class="setup hidden"></div>
-  <div class="big">
-    <div class="lbl">Tempo</div>
-    <div id="time">00:00</div>
-  </div>
 
-  <div class="grid">
-    <div class="card"><div class="lbl">Distância</div><div class="val" id="dist">0,00<small>km</small></div></div>
-    <div class="card hl"><div class="lbl">Ritmo agora</div><div class="val" id="paceNow">--:--<small>/km</small></div></div>
-    <div class="card"><div class="lbl">Ritmo médio</div><div class="val" id="paceAvg">--:--<small>/km</small></div></div>
-    <div class="card"><div class="lbl">Velocidade</div><div class="val" id="speed">0,0<small>km/h</small></div></div>
-    <div class="card"><div class="lbl">Este km</div><div class="val" id="paceLap">--:--<small>/km</small></div></div>
-    <div class="card"><div class="lbl">Cadência</div><div class="val" id="cadence">--<small>passos/min</small></div></div>
-  </div>
+  <button class="fab" id="btnCenter" title="Voltar para você" aria-label="Voltar para você">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="currentColor"/><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+  </button>
 
-  <div id="rhythm"><div id="rhythmBar"></div></div>
-  <div id="rhythmTxt"></div>
+  <div id="kmToast" class="toast" aria-live="polite"></div>
 
-  <div id="mapBox">
-    <div id="map"></div>
-    <div class="map-strip">
-      <div><small>Tempo</small><b id="mfTime">00:00</b></div>
-      <div><small>Km</small><b id="mfDist">0,00</b></div>
-      <div><small>Ritmo</small><b id="mfPace">--:--</b></div>
+  <!-- Números em tela cheia (alternativa ao mapa durante a corrida) -->
+  <div id="statsFull">
+    <div class="sf-block"><small>Tempo</small><b id="fTime" class="t-blink">00:00</b></div>
+    <div class="sf-row">
+      <div class="sf-block"><small>Ritmo agora</small><b id="fPace" class="acc">--:--</b><em>/km</em></div>
+      <div class="sf-block"><small>Distância</small><b id="fDist">0,00</b><em>km</em></div>
     </div>
-    <div class="map-btns">
-      <button class="icon-btn" id="btnCenter" title="Voltar para você">◎</button>
-      <button class="icon-btn" id="btnFull" title="Mapa em tela cheia">⛶</button>
+    <div class="sf-row three">
+      <div class="sf-block"><small>Ritmo médio</small><b id="fAvg">--:--</b></div>
+      <div class="sf-block"><small>Este km</small><b id="fLap">--:--</b></div>
+      <div class="sf-block"><small>Cadência</small><b id="fCad">--</b></div>
+    </div>
+    <div id="rhythm"><div id="rhythmBar"></div></div>
+    <div id="rhythmTxt"></div>
+    <div id="splitsWrap"></div>
+  </div>
+
+  <!-- Folha inferior -->
+  <div id="sheet">
+    <div class="sheet-grip"></div>
+
+    <div class="idle-only sheet-idle">
+      <div class="sport"><span class="sport-ico"><svg viewBox="96 110 330 290"><path d="M132 362C196 362 214 236 280 236S360 150 384 150" fill="none" stroke="currentColor" stroke-width="40" stroke-linecap="round"/><circle cx="384" cy="150" r="40" fill="currentColor"/></svg></span>
+        <div><b>Corrida</b><small id="idleHint">Esperando o sinal ficar bom</small></div></div>
+      <div class="toggles">
+        <label class="tg"><input type="checkbox" id="optVoice" checked><span></span>Voz a cada km</label>
+        <label class="tg"><input type="checkbox" id="optCount" checked><span></span>Contagem 3·2·1</label>
+      </div>
+    </div>
+
+    <div class="rec-only stats-row" id="statsRow">
+      <div><small>Tempo</small><b id="sTime" class="t-blink">00:00</b></div>
+      <div><small>Ritmo</small><b id="sPace" class="acc">--:--</b><em>/km</em></div>
+      <div><small>Distância</small><b id="sDist">0,00</b><em>km</em></div>
+    </div>
+
+    <div class="controls">
+      <button class="side-btn rec-only" id="btnMode" aria-label="Alternar mapa e números">
+        <svg class="ico-stats" viewBox="0 0 24 24"><path d="M4 18h3V9H4zm6.5 0h3V5h-3zM17 18h3v-6h-3z" fill="currentColor"/></svg>
+        <svg class="ico-map" viewBox="0 0 24 24"><path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2zm0 2.2 6 2v11.6l-6-2z" fill="currentColor"/></svg>
+      </button>
+
+      <button class="round go" id="btnStart"><span>Começar</span></button>
+      <button class="round pause" id="btnPause" aria-label="Pausar"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="currentColor"/></svg></button>
+      <button class="round go small" id="btnResume"><span>Continuar</span></button>
+      <button class="round stop small" id="btnStop"><span>Encerrar</span></button>
+
+      <span class="side-btn ghost rec-only"></span>
     </div>
   </div>
 
-  <div class="opts">
-    <label><input type="checkbox" id="optVoice" checked> Avisar por voz a cada km</label>
+  <div id="countdown"><span id="cdNum"></span></div>
+</section>
+
+<!-- ================= VOCÊ ================= -->
+<section id="viewHistory" class="view hidden">
+  <div class="you-head">
+    <div class="brand big"><svg viewBox="96 110 330 290" aria-hidden="true"><path d="M132 362C196 362 214 236 280 236S360 150 384 150" fill="none" stroke="#A3C48A" stroke-width="38" stroke-linecap="round"/><circle cx="132" cy="362" r="26" fill="#EEECE6"/><circle cx="384" cy="150" r="36" fill="#A3C48A"/></svg>Você</div>
   </div>
+  <div class="you-body">
+    <div class="grid three" id="histTotals"></div>
+    <h2>Corridas</h2>
+    <div id="historyList"></div>
+  </div>
+</section>
 
-  <h2>Quilômetros</h2>
-  <div id="splitsWrap"><div class="empty">Cada quilômetro aparece aqui.</div></div>
-</main>
+<nav class="bottom-nav">
+  <button class="tab on" data-view="viewRun">
+    <svg viewBox="96 110 330 290"><path d="M132 362C196 362 214 236 280 236S360 150 384 150" fill="none" stroke="currentColor" stroke-width="40" stroke-linecap="round"/><circle cx="384" cy="150" r="40" fill="currentColor"/></svg>Correr</button>
+  <button class="tab" data-view="viewHistory">
+    <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4" fill="currentColor"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7z" fill="currentColor"/></svg>Você</button>
+</nav>
 
-<main id="viewHistory" class="view hidden">
-  <div class="grid three" id="histTotals"></div>
-  <h2>Corridas</h2>
-  <div id="historyList"></div>
-</main>
-
-<section id="viewSummary" class="hidden"></section>
+<section id="viewSave" class="sheet-page hidden"></section>
+<section id="viewSummary" class="sheet-page hidden"></section>
 
 <section id="welcome" class="hidden">
   <div class="wl-in">
-    <svg class="wl-mark" viewBox="96 110 330 290" aria-hidden="true"><path d="M132 362C196 362 214 236 280 236S360 150 384 150" fill="none" stroke="#A3C48A" stroke-width="30" stroke-linecap="round"/><circle cx="132" cy="362" r="22" fill="#EEECE6"/><circle cx="384" cy="150" r="32" fill="#A3C48A"/></svg>
+    <svg class="wl-mark" viewBox="96 110 330 290" aria-hidden="true"><path class="wl-path" d="M132 362C196 362 214 236 280 236S360 150 384 150" fill="none" stroke="#A3C48A" stroke-width="30" stroke-linecap="round"/><circle cx="132" cy="362" r="22" fill="#EEECE6"/><circle class="wl-dot" cx="384" cy="150" r="32" fill="#A3C48A"/></svg>
     <div class="wl-name">passada</div>
     <p class="wl-lead">Corra do seu jeito.<br>A medida fica com a gente.</p>
     <ul class="wl-list">
       <li><b>Medida segundo a segundo</b><span>Pelo GPS do celular, com filtro que tira o tremido do sinal.</span></li>
-      <li><b>Seu trajeto no mapa</b><span>Cada quilômetro marcado, do começo ao fim.</span></li>
+      <li><b>Seu trajeto no mapa</b><span>O mapa chega perto da rua quando você começa e acompanha cada passo.</span></li>
       <li><b>Aviso por voz a cada km</b><span>Quanto levou e seu ritmo médio, sem precisar olhar.</span></li>
     </ul>
-    <button id="wlGo">Começar</button>
+    <button id="wlGo" class="wide go">Começar</button>
     <p class="wl-note" id="wlNote">Em seguida o celular pede para usar a localização.</p>
   </div>
 </section>
 
-<footer>
-  <button id="btnStart">Começar</button>
-  <button id="btnPause" class="hidden">Pausar</button>
-  <button id="btnStop" class="hidden">Encerrar</button>
-</footer>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
   integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-<script src="js/capacitor.js?v=6"></script>
-<script src="js/map.js?v=6"></script>
-<script src="js/store.js?v=6"></script>
-<script src="js/history.js?v=6"></script>
-<script src="js/tracker.js?v=6"></script>
-<script src="js/native.js?v=6"></script>
+<script src="js/capacitor.js?v=7"></script>
+<script src="js/map.js?v=7"></script>
+<script src="js/store.js?v=7"></script>
+<script src="js/history.js?v=7"></script>
+<script src="js/tracker.js?v=7"></script>
+<script src="js/native.js?v=7"></script>
 </body>
 </html>

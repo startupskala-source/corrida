@@ -37,7 +37,7 @@ function drawRoute(map, points, splits, layer) {
 
 const MapView = {
   ok: typeof L !== 'undefined',
-  map: null, route: null, me: null, meAcc: null, follow: true, lastKey: '',
+  map: null, route: null, me: null, meAcc: null, follow: true, lastKey: '', lastLL: null, heading: null, flying: false,
 
   init(el) {
     if (!this.ok) return;
@@ -46,19 +46,59 @@ const MapView = {
     this.route = L.layerGroup().addTo(this.map);
     // arrastar o mapa = parar de seguir; ◎ volta a seguir
     this.map.on('dragstart', () => { this.follow = false; document.getElementById('btnCenter').classList.add('on'); });
+    this.map.on('moveend', () => { this.flying = false; });
   },
 
-  setPosition(lat, lon, acc) {
+  // Onde a pessoa deve aparecer: no meio da área livre entre o topo e a folha de baixo
+  offsetY() {
+    const el = this.map.getContainer(), h = el.clientHeight;
+    const sheet = document.getElementById('sheet');
+    const bottom = sheet && sheet.offsetParent ? sheet.getBoundingClientRect().top - el.getBoundingClientRect().top : h;
+    const target = (64 + Math.max(120, bottom)) / 2;
+    return h / 2 - target;                            // px que o centro desce para o ponto subir
+  },
+  centerFor(ll, zoom) {
+    const z = zoom == null ? this.map.getZoom() : zoom;
+    return this.map.unproject(this.map.project(L.latLng(ll), z).add([0, this.offsetY()]), z);
+  },
+
+  setPosition(lat, lon, acc, heading) {
     if (!this.map) return;
-    const ll = [lat, lon];
+    const ll = L.latLng(lat, lon);
+    // direção: do GPS quando confiável; senão, pelo deslocamento desde a última posição
+    if (heading != null && isFinite(heading)) this.heading = heading;
+    else if (this.lastLL && this.lastLL.distanceTo(ll) > 4) {
+      const y = Math.sin((lon - this.lastLL.lng) * Math.PI / 180) * Math.cos(lat * Math.PI / 180);
+      const x = Math.cos(this.lastLL.lat * Math.PI / 180) * Math.sin(lat * Math.PI / 180) -
+        Math.sin(this.lastLL.lat * Math.PI / 180) * Math.cos(lat * Math.PI / 180) * Math.cos((lon - this.lastLL.lng) * Math.PI / 180);
+      this.heading = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+    }
+    if (!this.lastLL || this.lastLL.distanceTo(ll) > 4) this.lastLL = ll;
+
     if (!this.me) {
-      this.meAcc = L.circle(ll, { radius: acc, color: '#8fb7d9', weight: 1, fillColor: '#8fb7d9', fillOpacity: .12, interactive: false }).addTo(this.map);
-      this.me = L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#8fb7d9', fillOpacity: 1 }).addTo(this.map);
-      this.map.setView(ll, 17);
+      this.meAcc = L.circle(ll, { radius: acc, color: '#8fb7d9', weight: 1, fillColor: '#8fb7d9', fillOpacity: .1, interactive: false }).addTo(this.map);
+      this.me = L.marker(ll, { interactive: false, zIndexOffset: 1000, icon: L.divIcon({
+        className: '', iconSize: [44, 44], iconAnchor: [22, 22],
+        html: '<div class="me"><span class="ring"></span><span class="arrow"></span><span class="dot"></span></div>' }) }).addTo(this.map);
+      this.map.flyTo(this.centerFor(ll, 16), 16, { duration: 1.4 });   // bairro, ao abrir
     } else {
       this.me.setLatLng(ll); this.meAcc.setLatLng(ll).setRadius(acc);
-      if (this.follow) this.map.panTo(ll, { animate: true, duration: .5 });
+      if (this.follow && !this.flying) this.map.panTo(this.centerFor(ll), { animate: true, duration: .8, easeLinearity: .5 });
     }
+    const el = this.me.getElement() && this.me.getElement().querySelector('.me');
+    if (el) {
+      el.classList.toggle('dir', this.heading != null);
+      if (this.heading != null) el.querySelector('.arrow').style.transform = `rotate(${this.heading}deg)`;
+    }
+  },
+
+  // Ao começar: voo até a rua (zoom 18) e passa a seguir
+  flyToStreet() {
+    if (!this.map) return;
+    this.follow = true; this.flying = true;
+    document.getElementById('btnCenter').classList.remove('on');
+    const ll = this.me ? this.me.getLatLng() : this.map.getCenter();
+    setTimeout(() => this.map.flyTo(this.centerFor(ll, 18), 18, { duration: 1.3, easeLinearity: .2 }), 60);
   },
 
   update(points, splits) {
@@ -70,16 +110,19 @@ const MapView = {
     drawRoute(this.map, points, splits, this.route);
   },
 
+  clearRoute() { if (this.route) { this.route.clearLayers(); this.lastKey = ''; } },
+
   recenter() {
-    this.follow = true;
+    this.follow = true; this.flying = true;
     document.getElementById('btnCenter').classList.remove('on');
-    if (this.me) this.map.setView(this.me.getLatLng(), Math.max(this.map.getZoom(), 16));
+    if (this.me) { const z = Math.max(this.map.getZoom(), 16); this.map.flyTo(this.centerFor(this.me.getLatLng(), z), z, { duration: .8 }); }
   },
 
+  // Ao encerrar: afasta para mostrar o trajeto inteiro
   fit(points) {
     if (!this.map || !points.length) return;
     this.follow = false;
-    this.map.fitBounds(L.latLngBounds(points.map(p => [p.lat, p.lon])), { padding: [24, 24] });
+    this.map.flyToBounds(L.latLngBounds(points.map(p => [p.lat, p.lon])), { paddingTopLeft: [30, 80], paddingBottomRight: [30, 280], duration: 1.2 });
   },
 
   invalidate() { if (this.map) setTimeout(() => this.map.invalidateSize(), 60); }
