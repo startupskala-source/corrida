@@ -1,6 +1,6 @@
 {
-  "name": "Corrida",
-  "short_name": "Corrida",
+  "name": "Passada",
+  "short_name": "Passada",
   "start_url": "./",
   "display": "standalone",
   "orientation": "portrait",
