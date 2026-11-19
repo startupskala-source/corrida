@@ -121,10 +121,16 @@ function onPosition(pos) {
     const pv = prevV; prevV = { ts, v: speed };
     const dtv = pv ? (ts - pv.ts) / 1000 : 0;
     const vAvg = pv ? (speed + pv.v) / 2 : speed;
-    if (!pv || dtv <= 0 || dtv > 10) { diag.why = 'aguardando'; showDiag(); return; }
-    if (vAvg < 0.5) { diag.why = 'parado'; showDiag(); return; }
-    if (vAvg > MAX_SPEED) { diag.why = 'salto, ignorada'; showDiag(); return; }
-    stepM = vAvg * dtv;
+    if (!pv || dtv <= 0 || dtv > 10) {
+      // voltou depois de um buraco no sinal: conta o trecho pela distância em linha reta
+      const gap = haversine(lastFix, p), gdt = (ts - lastTs) / 1000;
+      if (gap < Math.max(MIN_STEP, accuracy) || (gdt > 0 && gap / gdt > MAX_SPEED)) { diag.why = 'aguardando'; showDiag(); return; }
+      stepM = gap;
+    } else {
+      if (vAvg < 0.5) { diag.why = 'parado'; showDiag(); return; }
+      if (vAvg > MAX_SPEED) { diag.why = 'salto, ignorada'; showDiag(); return; }
+      stepM = vAvg * dtv;
+    }
   } else {
     // Reserva (aparelho sem velocidade): posição filtrada, só conta passos maiores que o ruído
     prevV = null;
@@ -234,15 +240,18 @@ function cadence() {
   const span = (steps[steps.length - 1] - steps[0]) / 60000;
   return span > 0 ? (steps.length - 1) / span : NaN;
 }
+let motionOn = false;
 async function enableMotion() {
+  if (motionOn) return;
   try {
     if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
       if (await DeviceMotionEvent.requestPermission() !== 'granted') return;
     }
-    window.addEventListener('devicemotion', onMotion);
+    window.addEventListener('devicemotion', onMotion); motionOn = true;
   } catch (_) {}
 }
 
+let toastTimer = null;
 // ---------- Render ----------
 const setText = (id, v) => { const e = $(id); if (e && e.textContent !== v) e.textContent = v; };
 function render() {
@@ -278,10 +287,16 @@ function updateIdleHint(acc) {
   h.textContent = !isFinite(acc) ? 'Esperando o sinal' : acc <= 15 ? 'Sinal bom. Pode começar.' : acc <= 40 ? 'Sinal razoável. Melhor ao ar livre.' : 'Sinal fraco. Procure um lugar aberto.';
 }
 
-// Aviso que desce do topo a cada km
-let toastTimer = null;
-function showKmToast(km, ms) {
+// Aviso neutro no topo (mesmo estilo do aviso de km)
+function showNotice(text, ms = 5000) {
   const t = $('kmToast');
+  t.textContent = text; t.classList.add('show', 'notice');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show', 'notice'), ms);
+}
+
+// Aviso que desce do topo a cada km
+function showKmToast(km, ms) {
+  const t = $('kmToast'); t.classList.remove('notice');
   t.innerHTML = `Km ${km} <small>${fmtPace(ms / 1000)} /km</small>`;
   t.classList.add('show');
   clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 4000);
@@ -335,20 +350,20 @@ function drawCanvas() {
 function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({
-      points, distance, elapsedMs: currentElapsed(), splits, lastSplitMs, lastSplitDist, savedAt: Date.now()
+      points, distance, elapsedMs: currentElapsed(), splits, lastSplitMs, lastSplitDist, startedAt: runStartedAt, savedAt: Date.now()
     }));
   } catch (_) {}
 }
 function restore() {
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
-    if (!s || Date.now() - s.savedAt > 6 * 3600 * 1000) return;
-    if (!confirm(`Ficou uma corrida aberta (${fmtNum(s.distance / 1000, 2)} km). Quer continuar de onde parou?`)) {
-      localStorage.removeItem(SAVE_KEY); return;
-    }
+    if (!s || Date.now() - s.savedAt > 24 * 3600 * 1000) return;
     ({ points, distance, elapsedMs, splits, lastSplitMs, lastSplitDist } = s);
+    runStartedAt = s.startedAt || (s.savedAt - s.elapsedMs);
     lastFix = points[points.length - 1] || null; segBreak = true;
     state = 'paused'; setUiState('paused'); render(); renderSplits(); draw(); startGps();
+    MapView.fit(points);
+    showNotice('Sua corrida estava aberta. Continue ou encerre quando quiser.');
   } catch (_) {}
 }
 
@@ -398,16 +413,21 @@ function resetRun() {
   MapView.clearRoute(); renderSplits(); render();
 }
 
+let starting = false;                               // evita duas contagens com toque duplo
+let runStartedAt = 0;                               // hora real do início (para data e título)
 $('btnStart').onclick = async () => {
-  if (state !== 'idle') return;
+  if (state !== 'idle' || starting) return;
+  starting = true;
   resetRun(); enableMotion(); startGps();
-  await runCountdown();
-  state = 'running'; runStart = Date.now(); keepAwake();
+  try { await runCountdown(); } finally { starting = false; }
+  state = 'running'; runStart = Date.now(); runStartedAt = Date.now(); keepAwake();
   clearInterval(tick); tick = setInterval(render, 500);
   setUiState('running'); render();
 };
 
 $('btnResume').onclick = () => {
+  if (state !== 'paused') return;
+  enableMotion();
   segBreak = true; state = 'running'; runStart = Date.now(); keepAwake();
   clearInterval(tick); tick = setInterval(render, 500);
   MapView.recenter(); setUiState('running'); render();
@@ -420,6 +440,7 @@ $('btnPause').onclick = () => {
 };
 
 $('btnStop').onclick = () => {
+  if (state !== 'paused') return;
   state = 'idle';
   localStorage.removeItem(SAVE_KEY);
   finishRun({ distance, elapsed: elapsedMs, splits, points });
@@ -428,15 +449,17 @@ $('btnStop').onclick = () => {
 // Encerrou: afasta o mapa e abre "Salvar corrida" (versão web e nativa)
 function finishRun(r) {
   const run = {
-    id: Math.round(Date.now() - r.elapsed),        // início aproximado (ms) — também é a chave
+    id: Math.round(r.startedAt || runStartedAt || (Date.now() - r.elapsed)),   // hora do início — também é a chave
     distance: r.distance, elapsed: r.elapsed, splits: r.splits,
     points: r.points.map(p => ({ lat: +(+p.lat).toFixed(6), lon: +(+p.lon).toFixed(6), t: Math.round(p.t), d: Math.round(p.d * 10) / 10, brk: p.brk || undefined }))
   };
+  setUiState('saving');
   MapView.fit(r.points);
   if (r.distance < 50) {
     alert('Corrida curta demais para guardar (menos de 50 m).');
     backToIdle(); return;
   }
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(run)); } catch (_) {}   // protegido desde já
   setTimeout(() => openSave(run), 700);              // deixa o mapa terminar de se afastar
 }
 
@@ -476,6 +499,16 @@ window.welcomeDone = new Promise(resolve => {
 
 MapView.init($('map'));
 draw(); render(); setUiState('idle');
+reopenPendingSave();
 if (!NATIVE) restore();
 // liga o GPS já ao abrir (se a permissão já foi dada) para o sinal estar firme ao iniciar
 if (!NATIVE && navigator.permissions) navigator.permissions.query({ name: 'geolocation' }).then(r => { if (r.state === 'granted') startGps(); }).catch(() => {});
+
+// Chamado pelo Android (MainActivity) no botão voltar. true = tratado aqui; false = minimizar o app.
+window.passadaBack = () => {
+  if (!$('viewSummary').classList.contains('hidden')) { closeSummary(); return true; }
+  if (!$('viewSave').classList.contains('hidden')) return false;        // a corrida fica guardada como pendente
+  if (document.body.dataset.mode === 'stats' && state !== 'idle') { $('btnMode').click(); return true; }
+  if (document.body.dataset.view === 'viewHistory') { document.querySelector('.tab[data-view="viewRun"]').click(); return true; }
+  return false;
+};

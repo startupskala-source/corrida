@@ -1,6 +1,7 @@
 'use strict';
 // Resumo de uma corrida + lista do histórico. Usa fmtTime/fmtPace/fmtNum do tracker.js.
 let summaryMap = null, saveMap = null;
+const PENDING_KEY = 'passada_pendente';
 const titleOf = r => r.title || runTitle(r.id);
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
@@ -104,6 +105,7 @@ async function renderHistory() {
 
 // ---------- Salvar corrida (logo depois de encerrar) ----------
 function openSave(run) {
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(run)); } catch (_) {}
   const v = document.getElementById('viewSave');
   v.innerHTML = `
     <div class="sum-top">
@@ -128,7 +130,7 @@ function openSave(run) {
   if (saveMap) { saveMap.remove(); saveMap = null; }
   saveMap = staticRouteMap(document.getElementById('saveMap'), run.points, run.splits);
 
-  const close = () => { if (saveMap) { saveMap.remove(); saveMap = null; } v.classList.add('hidden'); };
+  const close = () => { localStorage.removeItem(PENDING_KEY); if (saveMap) { saveMap.remove(); saveMap = null; } v.classList.add('hidden'); };
   const doSave = async () => {
     run.title = document.getElementById('saveTitle').value.trim() || runTitle(run.id);
     run.note = document.getElementById('saveNote').value.trim();
@@ -141,4 +143,13 @@ function openSave(run) {
     if (!confirm('Descartar esta corrida? Ela não fica guardada.')) return;
     close(); backToIdle();
   };
+}
+
+// Ao abrir o app: se ficou uma corrida encerrada e não salva, volta para a tela Salvar
+function reopenPendingSave() {
+  try {
+    const run = JSON.parse(localStorage.getItem(PENDING_KEY) || 'null');
+    if (run && run.points && run.distance >= 50) openSave(run);
+    else localStorage.removeItem(PENDING_KEY);
+  } catch (_) { localStorage.removeItem(PENDING_KEY); }
 }

@@ -82,6 +82,7 @@ public class TrackingService extends Service implements LocationListener {
     long runStartRt = 0;                 // SystemClock.elapsedRealtime() do início/retomada
     long lastSplitMs = 0; double lastSplitDist = 0;
     boolean segBreak = false, voice = true;
+    long startedAt = 0;              // System.currentTimeMillis() do início
 
     // filtro / medição
     double kLat, kLon, kVar = -1; long kTs;
@@ -150,9 +151,13 @@ public class TrackingService extends Service implements LocationListener {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             why = "sem permissão de localização"; return;
         }
-        lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, this, Looper.getMainLooper());
-        if (gnssCb != null) lm.registerGnssStatusCallback(gnssCb, ui);
-        gpsOn = true;
+        try {
+            lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, this, Looper.getMainLooper());
+            if (gnssCb != null) lm.registerGnssStatusCallback(gnssCb, ui);
+            gpsOn = true;
+        } catch (IllegalArgumentException | SecurityException e) {
+            why = "este aparelho não tem GPS disponível";
+        }
     }
 
     void stopGps() {
@@ -203,10 +208,16 @@ public class TrackingService extends Service implements LocationListener {
             prevV = v; prevVRt = rt;
             double dtv = pv >= 0 ? (rt - pvRt) / 1000.0 : 0;
             double vAvg = pv >= 0 ? (v + pv) / 2 : v;
-            if (pv < 0 || dtv <= 0 || dtv > 10) { why = "aguardando"; return; }
-            if (vAvg < STOP_SPEED) { why = "parado"; return; }
-            if (vAvg > MAX_SPEED) { why = "salto, descartada"; return; }
-            step = vAvg * dtv;
+            if (pv < 0 || dtv <= 0 || dtv > 10) {
+                // voltou depois de um buraco no sinal: conta o trecho pela distância em linha reta
+                double gap = haversine(lastFix.lat, lastFix.lon, p.lat, p.lon), gdt = (rt - lastFixRt) / 1000.0;
+                if (gap < Math.max(MIN_STEP, acc) || (gdt > 0 && gap / gdt > MAX_SPEED)) { why = "aguardando"; return; }
+                step = gap;
+            } else {
+                if (vAvg < STOP_SPEED) { why = "parado"; return; }
+                if (vAvg > MAX_SPEED) { why = "salto, descartada"; return; }
+                step = vAvg * dtv;
+            }
         } else {
             prevV = -1;
             step = haversine(lastFix.lat, lastFix.lon, p.lat, p.lon);
@@ -312,6 +323,7 @@ public class TrackingService extends Service implements LocationListener {
         lastFix = null; kVar = -1; prevV = -1; speeds.clear(); segBreak = false;
         recv = 0; used = 0; why = "";
         voice = voiceOn;
+        startedAt = System.currentTimeMillis();
         state = "running"; runStartRt = SystemClock.elapsedRealtime();
         goForeground(); acquireWake(); startGps(); tickNotif();
     }
@@ -322,18 +334,21 @@ public class TrackingService extends Service implements LocationListener {
         releaseWake(); updateNotif(); saveSnapshot();
     }
 
-    synchronized void resume() {
-        if (!"paused".equals(state)) return;
+    synchronized boolean resume() {
+        if (!"paused".equals(state)) return false;
         segBreak = true; state = "running"; runStartRt = SystemClock.elapsedRealtime();
         goForeground(); acquireWake(); startGps(); tickNotif();
+        return true;
     }
 
     synchronized JSONObject stop() {
+        if ("idle".equals(state)) return null;
         if ("running".equals(state)) elapsedAccum = nowElapsed();
         JSONObject run = new JSONObject();
         try {
             run.put("distance", distance);
             run.put("elapsed", elapsedAccum);
+            run.put("startedAt", startedAt);
             run.put("splits", splitsJson());
             run.put("points", pointsJson(0));
         } catch (Exception ignored) {}
@@ -342,6 +357,7 @@ public class TrackingService extends Service implements LocationListener {
         ui.removeCallbacksAndMessages(null);
         stopForeground(true);
         snapshotFile().delete();
+        points.clear(); splits.clear(); distance = 0; elapsedAccum = 0; lastFix = null;
         return run;
     }
 
@@ -401,7 +417,7 @@ public class TrackingService extends Service implements LocationListener {
         try {
             JSONObject o = new JSONObject();
             o.put("savedAt", System.currentTimeMillis());
-            o.put("distance", distance); o.put("elapsed", nowElapsed());
+            o.put("distance", distance); o.put("elapsed", nowElapsed()); o.put("startedAt", startedAt);
             o.put("lastSplitMs", lastSplitMs); o.put("lastSplitDist", lastSplitDist);
             o.put("splits", splitsJson()); o.put("points", pointsJson(0));
             try (FileOutputStream f = new FileOutputStream(snapshotFile())) { f.write(o.toString().getBytes(StandardCharsets.UTF_8)); }
@@ -425,7 +441,9 @@ public class TrackingService extends Service implements LocationListener {
                 points.add(new Pt(j.getDouble("lat"), j.getDouble("lon"), j.getLong("t"), j.getDouble("d"), j.optBoolean("brk")));
             }
             lastFix = points.isEmpty() ? null : points.get(points.size() - 1);
+            startedAt = o.optLong("startedAt", o.optLong("savedAt") - elapsedAccum);
             segBreak = true; state = "paused";
+            goForeground(); updateNotif();
             return true;
         } catch (Exception e) { return false; }
     }

@@ -7,7 +7,8 @@ const Store = (() => {
       const r = indexedDB.open('passada', 1);
       r.onupgradeneeded = () => r.result.createObjectStore('runs', { keyPath: 'id' });
       r.onsuccess = () => res(r.result);
-      r.onerror = () => rej(r.error);
+      r.onerror = () => { dbp = null; rej(r.error); };
+      r.onblocked = () => { dbp = null; rej(new Error('banco ocupado')); };
     });
     return dbp;
   }
@@ -18,6 +19,7 @@ const Store = (() => {
       const req = fn(st);
       t.oncomplete = () => res(req && req.result);
       t.onerror = () => rej(t.error);
+      t.onabort = () => rej(t.error || new Error('gravação cancelada'));
     });
   }
   return {

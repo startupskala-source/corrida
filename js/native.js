@@ -10,7 +10,16 @@
   if (!reg) { showErr('Algo não carregou direito. Feche e abra o app de novo.'); return; }
   const T = reg('Tracker');
   let nat = { elapsed: 0, at: performance.now(), paceNow: NaN };
-  let poll = null, splitsLen = -1, busy = false;
+  let poll = null, splitsLen = -1, busy = false, recovering = false;
+  async function recoverLost() {
+    recovering = true;
+    try {
+      const snap = await T.getSnapshot();
+      if (snap.exists) { await T.restoreSnapshot(); showNotice('A gravação foi interrompida pelo celular. Recuperei sua corrida, pausada.'); }
+      else { state = 'idle'; resetRun(); setUiState('idle'); showNotice('A gravação foi interrompida pelo celular e não deu para recuperar.'); }
+    } catch (_) { state = 'idle'; setUiState('idle'); }
+    recovering = false;
+  }
 
   currentElapsed = () => state === 'running' ? nat.elapsed + (performance.now() - nat.at) : nat.elapsed;
   paceNow = () => nat.paceNow;
@@ -20,7 +29,10 @@
     if (busy) return; busy = true;
     try {
       const s = await T.getState({ from: points.length });
-      if (s.state === 'off') return;
+      if (s.state === 'off') {
+        if (state !== 'idle' && !recovering) recoverLost();
+        return;
+      }
       if (s.acc > 0 && s.posLat != null && s.posAge < 20000) {
         MapView.setPosition(s.posLat, s.posLon, s.acc, (s.speed > 0.8 && s.bearing != null) ? s.bearing : null);
         updateIdleHint(s.acc);
@@ -76,7 +88,11 @@
     });
     return st;
   }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') renderSetup(); });
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible') return;
+    const st = await renderSetup();
+    if (st && st.location) T.warmup().catch(() => {});
+  });
 
   async function ready() {
     let st = await T.checkSetup();
@@ -94,36 +110,47 @@
   const voice = () => $('optVoice').checked;
   $('optVoice').onchange = () => T.setVoice({ voice: voice() }).catch(() => {});
 
+  let starting = false;
   $('btnStart').onclick = async () => {
-    if (state !== 'idle') return;
+    if (state !== 'idle' || starting) return;
+    starting = true;
+    try { await startRun(); } finally { starting = false; }
+  };
+  async function startRun() {
     if (!(await ready())) return;
     T.warmup().catch(() => {});
     resetRun(); splitsLen = -1;
     await runCountdown();                       // 3·2·1 com o mapa voando para a rua
     try { await T.start({ voice: voice() }); } catch (e) { alert('Não deu para começar: ' + (e.message || e)); setUiState('idle'); return; }
     enableMotion();
-    state = 'running'; nat = { elapsed: 0, at: performance.now(), paceNow: NaN };
+    state = 'running'; runStartedAt = Date.now(); nat = { elapsed: 0, at: performance.now(), paceNow: NaN };
     setUiState('running'); startPoll();
-  };
+  }
 
   $('btnResume').onclick = async () => {
-    await T.resume({ voice: voice() });
+    if (state !== 'paused') return;
+    try { await T.resume({ voice: voice() }); } catch (e) { showNotice('Não deu para continuar: ' + (e.message || e)); pull(); return; }
+    enableMotion();
     state = 'running'; nat = { elapsed: nat.elapsed, at: performance.now(), paceNow: NaN };
     MapView.recenter(); setUiState('running'); startPoll();
   };
 
   $('btnPause').onclick = async () => {
-    await T.pause(); state = 'paused'; setUiState('paused'); pull();
+    if (state !== 'running') return;
+    try { await T.pause(); } catch (_) {} state = 'paused'; setUiState('paused'); pull();
   };
 
+  let stopping = false;
   $('btnStop').onclick = async () => {
+    if (state !== 'paused' || stopping) return;
+    stopping = true; setTimeout(() => { stopping = false; }, 1500);
     let r;
     try { r = await T.stop(); } catch (e) { alert('Não deu para encerrar: ' + (e.message || e)); return; }
     state = 'idle';
     points = r.points || []; distance = r.distance; splits = r.splits || [];
     nat = { elapsed: r.elapsed, at: performance.now(), paceNow: NaN };
     draw();
-    finishRun({ distance: r.distance, elapsed: r.elapsed, splits, points });
+    finishRun({ distance: r.distance, elapsed: r.elapsed, splits, points, startedAt: r.startedAt });
     T.warmup().catch(() => {});                 // mantém o ponto azul no mapa
   };
 
@@ -140,10 +167,10 @@
     try {
       const snap = await T.getSnapshot();
       if (snap.exists && Date.now() - snap.savedAt < 6 * 3600 * 1000) {
-        if (confirm(`Ficou uma corrida aberta (${fmtNum(snap.distance / 1000, 2)} km). Quer continuar de onde parou?`)) {
-          await T.restoreSnapshot(); startPoll(); return;
-        }
-        await T.discardSnapshot();
+        await T.restoreSnapshot(); startPoll();
+        showNotice('Sua corrida estava aberta. Continue ou encerre quando quiser.');
+        setTimeout(() => MapView.fit(points), 1500);
+        return;
       }
     } catch (_) {}
     if (st && st.location) { await T.warmup().catch(() => {}); startPoll(); }

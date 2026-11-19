@@ -63,6 +63,7 @@ body[data-mode="stats"]:not([data-rec="idle"]) .fab { opacity: 0; pointer-events
   transition: transform .45s var(--ease-out), opacity .3s; white-space: nowrap; }
 .toast.show { transform: translate(-50%, 0); opacity: 1; }
 .toast small { font-weight: 600; opacity: .7; margin-left: 6px; }
+.toast.notice { background: var(--card2); color: var(--txt); border: 1px solid var(--line); font-size: 14px; font-weight: 600; white-space: normal; width: calc(100% - 28px); text-align: center; border-radius: 16px; }
 
 /* ---------- Folha inferior ---------- */
 #sheet { position: absolute; z-index: 800; left: 0; right: 0; bottom: calc(var(--nav-h) + var(--safe-b)); background: var(--bg);
@@ -110,7 +111,7 @@ body:not([data-rec="idle"]) #btnStart,
 body:not([data-rec="running"]) #btnPause,
 body:not([data-rec="paused"]) #btnResume,
 body:not([data-rec="paused"]) #btnStop { display: none; }
-body[data-rec="countdown"] .controls { visibility: hidden; }
+body[data-rec="countdown"] .controls, body[data-rec="saving"] .controls { visibility: hidden; }
 body[data-rec="paused"] #btnResume { animation: slideFromL .35s var(--ease-out); }
 body[data-rec="paused"] #btnStop { animation: slideFromR .35s var(--ease-out); }
 body[data-rec="paused"] .side-btn { display: none; }

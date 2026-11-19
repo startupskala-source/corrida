@@ -118,7 +118,8 @@ public class TrackerPlugin extends Plugin {
         TrackingService s = service();
         if (s == null) { call.reject("serviço não iniciou"); return; }
         s.voice = call.getBoolean("voice", s.voice);
-        s.resume(); call.resolve();
+        if (!s.resume()) { call.reject("a corrida não estava pausada"); return; }
+        call.resolve();
     }
 
     @PluginMethod public void setVoice(PluginCall call) {
@@ -128,7 +129,11 @@ public class TrackerPlugin extends Plugin {
     @PluginMethod public void stop(PluginCall call) {
         TrackingService s = TrackingService.instance;
         if (s == null) { call.reject("nenhuma corrida em andamento"); return; }
-        try { call.resolve(JSObject.fromJSONObject(s.stop())); } catch (Exception e) { call.reject(e.getMessage()); }
+        try {
+            JSONObject run = s.stop();
+            if (run == null) { call.reject("nenhuma corrida em andamento"); return; }
+            call.resolve(JSObject.fromJSONObject(run));
+        } catch (Exception e) { call.reject(e.getMessage()); }
     }
 
     @PluginMethod public void getState(PluginCall call) {
