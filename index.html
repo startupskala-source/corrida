@@ -21,6 +21,8 @@
   #gps i { width: 8px; height: 8px; border-radius: 50%; background: var(--red); display: inline-block; }
   #gps.ok i { background: var(--acc); } #gps.weak i { background: var(--warn); }
 
+  .diag { font-size: 11px; color: var(--mut); padding: 0 16px 6px; min-height: 14px; }
+  .diag.bad { color: #1a1200; background: var(--warn); padding: 8px 16px; font-size: 13px; font-weight: 600; }
   main { flex: 1; overflow-y: auto; padding: 0 16px 16px; }
   .big { text-align: center; padding: 8px 0 4px; }
   .big .lbl { font-size: 12px; color: var(--mut); text-transform: uppercase; letter-spacing: 1px; }
@@ -60,6 +62,7 @@
   <h1>CORRIDA</h1>
   <div id="gps"><i></i><span>GPS desligado</span></div>
 </header>
+<div id="diag" class="diag"></div>
 
 <main>
   <div class="big">
@@ -98,8 +101,9 @@
 <script>
 'use strict';
 // ---------- Config ----------
-const MAX_ACCURACY = 30;      // m — descarta leituras de GPS piores que isso
-const MIN_STEP = 2.5;         // m — ignora "tremidas" do GPS parado
+const MAX_ACCURACY = 65;      // m — descarta leituras de GPS piores que isso
+const MIN_STEP = 2;           // m — ignora "tremidas" do GPS parado
+const KF_Q = 3;               // m/s — quanto a posição pode mudar por segundo (corrida)
 const MAX_SPEED = 12;         // m/s (~43 km/h) — descarta saltos impossíveis
 const PACE_WINDOW = 20;       // s — janela para o pace atual
 const SAVE_KEY = 'corrida_atual';
@@ -147,29 +151,92 @@ function setGps(cls, txt) {
   $('gps').className = cls; $('gps').querySelector('span').textContent = txt;
 }
 
-function onPosition(pos) {
-  const { latitude: lat, longitude: lon, accuracy } = pos.coords;
-  if (accuracy <= 12) setGps('ok', `GPS ±${Math.round(accuracy)} m`);
-  else setGps('weak', `GPS ±${Math.round(accuracy)} m`);
-  if (state !== 'running') return;
-  if (accuracy > MAX_ACCURACY) return;
+// Filtro de Kalman simples (posição + incerteza), igual ao usado em apps de corrida:
+// leituras precisas pesam mais, leituras ruins pesam menos; tira o "zigue-zague" do GPS.
+const kf = {
+  v: -1, lat: 0, lon: 0, ts: 0,
+  reset() { this.v = -1; },
+  step(lat, lon, acc, ts) {
+    acc = Math.max(acc, 1);
+    if (this.v < 0) { this.lat = lat; this.lon = lon; this.v = acc * acc; this.ts = ts; return; }
+    const dt = (ts - this.ts) / 1000;
+    if (dt > 0) { this.v += dt * KF_Q * KF_Q; this.ts = ts; }
+    const k = this.v / (this.v + acc * acc);
+    this.lat += k * (lat - this.lat); this.lon += k * (lon - this.lon);
+    this.v = (1 - k) * this.v;
+  }
+};
+const diag = { recv: 0, used: 0, acc: NaN, why: '', coarse: 0 };
+let gpsSpeeds = [];           // {ts, v} velocidade Doppler do chip GPS (m/s)
+let lastTs = 0;               // timestamp (relógio do GPS) do último ponto contado
+let prevV = null;             // última velocidade Doppler {ts, v}
 
+function showDiag() {
+  const el = $('diag');
+  if (diag.coarse >= 3) {
+    el.className = 'diag bad';
+    el.textContent = `Precisão ±${Math.round(diag.acc)} m: o celular está dando localização APROXIMADA. ` +
+      `Ative "Localização precisa" para este site/navegador nas permissões do celular.`;
+    return;
+  }
+  el.className = 'diag';
+  el.textContent = `Leituras: ${diag.recv} · usadas: ${diag.used}` +
+    (isFinite(diag.acc) ? ` · ±${Math.round(diag.acc)} m` : '') + (diag.why ? ` · ${diag.why}` : '');
+}
+
+function onPosition(pos) {
+  const { latitude: lat, longitude: lon, accuracy, speed } = pos.coords;
+  const ts = pos.timestamp || Date.now();
+  diag.acc = accuracy;
+  diag.coarse = accuracy >= 100 ? diag.coarse + 1 : 0;
+  if (accuracy <= 15) setGps('ok', `GPS ±${Math.round(accuracy)} m`);
+  else setGps('weak', `GPS ±${Math.round(accuracy)} m`);
+  if (state !== 'running') { showDiag(); return; }
+  diag.recv++;
+
+  if (accuracy > MAX_ACCURACY) { diag.why = 'sinal fraco, ignorada'; showDiag(); return; }
+
+  if (speed != null && isFinite(speed) && accuracy <= 30) {
+    gpsSpeeds.push({ ts, v: speed });
+    while (gpsSpeeds.length && ts - gpsSpeeds[0].ts > 10000) gpsSpeeds.shift();
+  }
+
+  if (segBreak) { kf.reset(); prevV = null; }
+  kf.step(lat, lon, accuracy, ts);
   const t = currentElapsed();
-  const p = { lat, lon, t, d: distance, brk: false };
+  const p = { lat: kf.lat, lon: kf.lon, t, d: distance, brk: false };
 
   if (!lastFix || segBreak) {
-    p.brk = segBreak; segBreak = false;
-    lastFix = p; points.push(p); draw(); return;
+    p.brk = segBreak && !!lastFix; segBreak = false;
+    if (speed != null && isFinite(speed)) prevV = { ts, v: speed };
+    lastFix = p; lastTs = ts; points.push(p); diag.used++; diag.why = 'início'; showDiag(); draw(); return;
   }
-  const step = haversine(lastFix, p);
-  const dt = (t - lastFix.t) / 1000;
-  if (step < Math.max(MIN_STEP, accuracy * 0.25)) return;     // parado / ruído
-  if (dt > 0 && step / dt > MAX_SPEED) return;                // salto impossível
+  const hasV = speed != null && isFinite(speed) && accuracy <= 40;
+  let stepM;
+  if (hasV) {
+    // Modo principal: integra a velocidade Doppler (não soma o "tremido" da posição)
+    const pv = prevV; prevV = { ts, v: speed };
+    const dtv = pv ? (ts - pv.ts) / 1000 : 0;
+    const vAvg = pv ? (speed + pv.v) / 2 : speed;
+    if (!pv || dtv <= 0 || dtv > 10) { diag.why = 'aguardando'; showDiag(); return; }
+    if (vAvg < 0.5) { diag.why = 'parado'; showDiag(); return; }
+    if (vAvg > MAX_SPEED) { diag.why = 'salto, ignorada'; showDiag(); return; }
+    stepM = vAvg * dtv;
+  } else {
+    // Reserva (aparelho sem velocidade): posição filtrada, só conta passos maiores que o ruído
+    prevV = null;
+    stepM = haversine(lastFix, p);
+    const dt = (ts - lastTs) / 1000;
+    if (stepM < Math.max(MIN_STEP, accuracy)) { diag.why = 'parado'; showDiag(); return; }
+    if (dt > 0 && stepM / dt > MAX_SPEED) { diag.why = 'salto, ignorada'; showDiag(); return; }
+  }
 
-  distance += step;
+  distance += stepM;
   p.d = distance;
-  lastFix = p;
+  lastFix = p; lastTs = ts;
   points.push(p);
+  diag.used++; diag.why = '';
+  showDiag();
   checkSplit(t);
   render();
   draw();
@@ -223,6 +290,14 @@ function announce(km, ms) {
 
 // ---------- Cálculos ----------
 function paceNow() {
+  // 1º: velocidade Doppler do chip GPS (últimos 6 s) — a mais estável
+  const lastT = gpsSpeeds.length ? gpsSpeeds[gpsSpeeds.length - 1].ts : 0;
+  const recent = gpsSpeeds.filter(s => lastT - s.ts <= 6000);
+  if (recent.length >= 2 && Date.now() - lastT < 8000) {
+    const v = recent.reduce((a, s) => a + s.v, 0) / recent.length;
+    return v > 0.5 ? 1000 / v : NaN;
+  }
+  // 2º: distância percorrida na janela recente
   if (points.length < 2) return NaN;
   const last = points[points.length - 1];
   const now = currentElapsed();
@@ -369,7 +444,8 @@ function setButtons() {
 $('btnStart').onclick = () => {
   if (state === 'idle') {
     points = []; distance = 0; elapsedMs = 0; splits = []; lastSplitMs = 0; lastSplitDist = 0;
-    lastFix = null; segBreak = false; steps = [];
+    lastFix = null; segBreak = false; steps = []; gpsSpeeds = []; kf.reset(); prevV = null;
+    Object.assign(diag, { recv: 0, used: 0, why: '' });
     renderSplits(); enableMotion();
   } else segBreak = true;
   state = 'running'; runStart = Date.now();
@@ -398,6 +474,8 @@ $('btnStop').onclick = () => {
 window.addEventListener('resize', draw);
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 draw(); render(); restore();
+// liga o GPS já ao abrir (se a permissão já foi dada) para o sinal estar firme ao iniciar
+if (navigator.permissions) navigator.permissions.query({ name: 'geolocation' }).then(r => { if (r.state === 'granted') startGps(); }).catch(() => {});
 </script>
 </body>
 </html>
