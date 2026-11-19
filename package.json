@@ -1,0 +1,16 @@
+{
+  "name": "passada",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "web": "node scripts/copy-web.mjs",
+    "sync": "node scripts/copy-web.mjs && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/core": "^8.6.2"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^8.6.2"
+  }
+}

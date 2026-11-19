@@ -103,3 +103,12 @@ body.mapfull footer { position: relative; z-index: 950; }
 .ghost-btn.danger { color: var(--red); border-color: #4a2a2a; }
 /* Mapa claro do OSM invertido para o tema escuro (imagem estática, sem animação) */
 .dark-tiles { filter: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.6); }
+
+/* ---------- Preparação (app Android) ---------- */
+.setup { background: #2a2312; border: 1px solid #5a4a1e; border-radius: 14px; padding: 12px; margin: 4px 0 10px; }
+.setup-title { font-weight: 700; color: var(--warn); margin-bottom: 6px; }
+.setup-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-top: 1px solid #3d3218; }
+.setup-row:first-of-type { border-top: 0; }
+.setup-row div { flex: 1; } .setup-row b { display: block; font-size: 14px; }
+.setup-row small { font-size: 12px; color: var(--mut); }
+.setup-row button { flex: none; padding: 10px 14px; font-size: 14px; border-radius: 10px; background: var(--warn); }

@@ -1,0 +1,6 @@
+{
+  "appId": "br.com.passada.app",
+  "appName": "Passada",
+  "webDir": "www",
+  "android": { "allowMixedContent": false }
+}

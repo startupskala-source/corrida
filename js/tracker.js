@@ -6,6 +6,8 @@ const KF_Q = 3;               // m/s — quanto a posição pode mudar por segun
 const MAX_SPEED = 12;         // m/s (~43 km/h) — descarta saltos impossíveis
 const PACE_WINDOW = 20;       // s — janela para o pace atual
 const SAVE_KEY = 'corrida_atual';
+// Dentro do app Android o GPS é medido pelo serviço nativo (js/native.js); aqui só no navegador.
+const NATIVE = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
 
 // ---------- Estado ----------
 let state = 'idle';           // idle | running | paused
@@ -149,6 +151,7 @@ function onGeoError(err) {
 }
 
 function startGps() {
+  if (NATIVE) return;
   if (!('geolocation' in navigator)) { setGps('', 'Sem GPS neste aparelho'); return; }
   if (watchId !== null) return;
   setGps('weak', 'Procurando GPS…');
@@ -378,14 +381,19 @@ $('btnStop').onclick = () => {
   setGps('', 'GPS desligado');
   localStorage.removeItem(SAVE_KEY);
   setButtons();
+  finishRun({ distance, elapsed: elapsedMs, splits, points });
+};
+
+// Salva a corrida terminada e abre o resumo (usado pela versão web e pela nativa)
+function finishRun(r) {
   if (document.body.classList.contains('mapfull')) toggleFull();
   const run = {
-    id: Math.round(Date.now() - elapsedMs),        // início aproximado (ms) — também é a chave
-    distance, elapsed: elapsedMs, splits,
-    points: points.map(p => ({ lat: +p.lat.toFixed(6), lon: +p.lon.toFixed(6), t: Math.round(p.t), d: Math.round(p.d * 10) / 10, brk: p.brk || undefined }))
+    id: Math.round(Date.now() - r.elapsed),        // início aproximado (ms) — também é a chave
+    distance: r.distance, elapsed: r.elapsed, splits: r.splits,
+    points: r.points.map(p => ({ lat: +(+p.lat).toFixed(6), lon: +(+p.lon).toFixed(6), t: Math.round(p.t), d: Math.round(p.d * 10) / 10, brk: p.brk || undefined }))
   };
-  MapView.fit(points);
-  if (distance < 50) { alert('Corrida muito curta (menos de 50 m) — não foi salva.'); return; }
+  MapView.fit(r.points);
+  if (r.distance < 50) { alert('Corrida muito curta (menos de 50 m) — não foi salva.'); return; }
   Store.saveRun(run)
     .then(() => { renderHistory(); openSummary(run); })
     .catch(() => alert('Não consegui salvar a corrida no aparelho.'));
@@ -409,8 +417,9 @@ document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
 });
 
 window.addEventListener('resize', draw);
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+if (!NATIVE && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 MapView.init($('map'));
-draw(); render(); restore();
+draw(); render();
+if (!NATIVE) restore();
 // liga o GPS já ao abrir (se a permissão já foi dada) para o sinal estar firme ao iniciar
-if (navigator.permissions) navigator.permissions.query({ name: 'geolocation' }).then(r => { if (r.state === 'granted') startGps(); }).catch(() => {});
+if (!NATIVE && navigator.permissions) navigator.permissions.query({ name: 'geolocation' }).then(r => { if (r.state === 'granted') startGps(); }).catch(() => {});
