@@ -3,7 +3,12 @@
 // Esta parte só pergunta o estado a cada 1 s e reaproveita os desenhos do tracker.js.
 (function () {
   if (!NATIVE) return;
-  const T = window.Capacitor.registerPlugin('Tracker');
+  const showErr = (msg) => { const d = $('diag'); d.className = 'diag bad'; d.textContent = msg; };
+  window.addEventListener('error', e => showErr('Algo deu errado: ' + e.message));
+  window.addEventListener('unhandledrejection', e => showErr('Algo deu errado: ' + ((e.reason && e.reason.message) || e.reason)));
+  const reg = (window.capacitorExports && window.capacitorExports.registerPlugin) || window.Capacitor.registerPlugin;
+  if (!reg) { showErr('Algo não carregou direito. Feche e abra o app de novo.'); return; }
+  const T = reg('Tracker');
   let nat = { elapsed: 0, at: performance.now(), paceNow: NaN };
   let poll = null, splitsLen = -1, busy = false;
 
@@ -18,10 +23,10 @@
       if (s.state === 'off') return;
       if (s.acc > 0 && s.posLat != null && s.posAge < 20000) {
         MapView.setPosition(s.posLat, s.posLon, s.acc);
-        setGps(s.acc <= 15 ? 'ok' : 'weak', `GPS ±${Math.round(s.acc)} m · ${s.sats} sat`);
-      } else setGps('weak', s.gpsOn ? 'Procurando GPS… (fique ao ar livre)' : 'GPS desligado');
+        setGps(s.acc <= 15 ? 'ok' : 'weak', `${s.acc <= 15 ? 'Sinal bom' : 'Sinal fraco'} · ±${Math.round(s.acc)} m`);
+      } else setGps('weak', s.gpsOn ? 'Procurando sinal… melhor ao ar livre' : 'Sem sinal');
       $('diag').className = 'diag';
-      $('diag').textContent = `Satélites em uso: ${s.sats}/${s.satsTotal}` +
+      $('diag').textContent = `${s.sats} satélites em uso` +
         (s.state !== 'idle' ? ` · leituras ${s.recv} · usadas ${s.used}${s.why ? ' · ' + s.why : ''}` : '');
 
       if (s.state === 'idle') { if (state !== 'idle') { state = 'idle'; setButtons(); } return; }
@@ -50,13 +55,13 @@
     let st;
     try { st = await T.checkSetup(); } catch (_) { return null; }
     const items = [];
-    if (!st.location) items.push(['Localização precisa', 'Necessária para medir a corrida.', 'Permitir', 'perm']);
-    if (!st.notifications) items.push(['Notificações', 'Mostra distância e pace com a tela apagada.', 'Permitir', 'perm']);
-    if (!st.gpsEnabled) items.push(['GPS do celular', 'Está desligado.', 'Ligar', 'gps']);
-    if (!st.batteryUnrestricted) items.push(['Bateria sem restrição', 'Evita o Android parar a gravação no meio da corrida.', 'Liberar', 'bat']);
+    if (!st.location) items.push(['Localização precisa', 'É com ela que a corrida é medida.', 'Permitir', 'perm']);
+    if (!st.notifications) items.push(['Notificações', 'Para ver distância e ritmo com a tela apagada.', 'Permitir', 'perm']);
+    if (!st.gpsEnabled) items.push(['Localização do celular', 'Está desligada.', 'Ligar', 'gps']);
+    if (!st.batteryUnrestricted) items.push(['Bateria sem restrição', 'Assim o Android não interrompe a gravação no meio do caminho.', 'Liberar', 'bat']);
     const box = $('setup');
     if (!items.length) { box.classList.add('hidden'); return st; }
-    box.innerHTML = '<div class="setup-title">Antes de correr</div>' + items.map(([t, d, b, a]) =>
+    box.innerHTML = '<div class="setup-title">Antes de sair</div>' + items.map(([t, d, b, a]) =>
       `<div class="setup-row"><div><b>${t}</b><small>${d}</small></div><button data-a="${a}">${b}</button></div>`).join('');
     box.classList.remove('hidden');
     box.querySelectorAll('button').forEach(btn => btn.onclick = async () => {
@@ -73,9 +78,9 @@
     let st = await T.checkSetup();
     if (!st.location || !st.notifications) st = await T.requestPermissions();
     renderSetup();
-    if (!st.location) { alert('Sem a permissão de localização o app não consegue medir a corrida.'); return false; }
+    if (!st.location) { alert('Sem a localização não dá para medir a corrida. Você pode liberar em Configurações › Apps › passada › Permissões.'); return false; }
     if (!st.gpsEnabled) {
-      if (confirm('O GPS do celular está desligado. Abrir as configurações para ligar?')) await T.openLocationSettings();
+      if (confirm('A localização do celular está desligada. Abrir as configurações para ligar?')) await T.openLocationSettings();
       return false;
     }
     return true;
@@ -89,7 +94,7 @@
     if (state === 'idle') {
       if (!(await ready())) return;
       points = []; splits = []; distance = 0; splitsLen = -1; renderSplits();
-      try { await T.start({ voice: voice() }); } catch (e) { alert('Não consegui iniciar: ' + (e.message || e)); return; }
+      try { await T.start({ voice: voice() }); } catch (e) { alert('Não deu para começar: ' + (e.message || e)); return; }
       enableMotion();
     } else {
       await T.resume({ voice: voice() });
@@ -103,9 +108,9 @@
   };
 
   $('btnStop').onclick = async () => {
-    if (!confirm('Finalizar a corrida?')) return;
+    if (!confirm('Encerrar a corrida?')) return;
     let r;
-    try { r = await T.stop(); } catch (e) { alert('Erro ao finalizar: ' + (e.message || e)); return; }
+    try { r = await T.stop(); } catch (e) { alert('Não deu para encerrar: ' + (e.message || e)); return; }
     state = 'idle'; setButtons();
     points = r.points || []; distance = r.distance; splits = r.splits || [];
     nat = { elapsed: r.elapsed, at: performance.now(), paceNow: NaN };
@@ -115,6 +120,10 @@
 
   // ---------- ao abrir o app ----------
   (async () => {
+    await window.welcomeDone;
+    let st0 = null;
+    try { st0 = await T.checkSetup(); } catch (e) { showErr('A medição não respondeu. Feche e abra o app de novo (' + (e.message || e) + ').'); return; }
+    if (!st0.location || !st0.notifications) { try { await T.requestPermissions(); } catch (_) {} }
     const st = await renderSetup();
     let s = { state: 'off' };
     try { s = await T.getState({ from: 0 }); } catch (_) {}
@@ -122,7 +131,7 @@
     try {
       const snap = await T.getSnapshot();
       if (snap.exists && Date.now() - snap.savedAt < 6 * 3600 * 1000) {
-        if (confirm(`Há uma corrida não finalizada (${fmtNum(snap.distance / 1000, 2)} km). Continuar?`)) {
+        if (confirm(`Ficou uma corrida aberta (${fmtNum(snap.distance / 1000, 2)} km). Quer continuar de onde parou?`)) {
           await T.restoreSnapshot(); startPoll(); return;
         }
         await T.discardSnapshot();

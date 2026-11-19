@@ -174,7 +174,7 @@ public class TrackingService extends Service implements LocationListener {
         if (!"running".equals(state)) return;
         recv++;
 
-        if (acc > MAX_ACCURACY) { why = "sinal fraco, ignorada"; return; }
+        if (acc > MAX_ACCURACY) { why = "sinal fraco, descartada"; return; }
 
         boolean speedOk = loc.hasSpeed() && acc <= MAX_ACC_SPEED;
         if (speedOk && Build.VERSION.SDK_INT >= 26 && loc.hasSpeedAccuracy() && loc.getSpeedAccuracyMetersPerSecond() > 1.5f) speedOk = false;
@@ -204,14 +204,14 @@ public class TrackingService extends Service implements LocationListener {
             double vAvg = pv >= 0 ? (v + pv) / 2 : v;
             if (pv < 0 || dtv <= 0 || dtv > 10) { why = "aguardando"; return; }
             if (vAvg < STOP_SPEED) { why = "parado"; return; }
-            if (vAvg > MAX_SPEED) { why = "salto, ignorada"; return; }
+            if (vAvg > MAX_SPEED) { why = "salto, descartada"; return; }
             step = vAvg * dtv;
         } else {
             prevV = -1;
             step = haversine(lastFix.lat, lastFix.lon, p.lat, p.lon);
             double dt = (rt - lastFixRt) / 1000.0;
             if (step < Math.max(MIN_STEP, acc)) { why = "parado"; return; }
-            if (dt > 0 && step / dt > MAX_SPEED) { why = "salto, ignorada"; return; }
+            if (dt > 0 && step / dt > MAX_SPEED) { why = "salto, descartada"; return; }
         }
 
         distance += step;
@@ -224,7 +224,7 @@ public class TrackingService extends Service implements LocationListener {
     }
 
     @Override public void onProviderEnabled(String provider) {}
-    @Override public void onProviderDisabled(String provider) { why = "GPS desligado no celular"; }
+    @Override public void onProviderDisabled(String provider) { why = "localização do celular desligada"; }
     @Override public void onStatusChanged(String provider, int status, Bundle extras) {}
 
     void kalman(double lat, double lon, float acc, long rt) {
@@ -269,8 +269,12 @@ public class TrackingService extends Service implements LocationListener {
         if (!voice || !ttsOk) return;
         long s = Math.round(ms / 1000.0);
         double avg = nowElapsed() / 1000.0 / (distance / 1000.0);
-        String txt = km + (km > 1 ? " quilômetros" : " quilômetro") + ". Parcial " + (s / 60) + " minutos e " + (s % 60) +
-                " segundos. Pace médio " + ((long) avg / 60) + " e " + Math.round(avg % 60) + ".";
+        long m = s / 60, ss = s % 60;
+        long am = (long) avg / 60, as = Math.round(avg % 60);
+        if (as == 60) { am++; as = 0; }
+        String txt = km + (km > 1 ? " quilômetros. " : " quilômetro. ") + "Esse levou " +
+                (m > 0 ? m + (m > 1 ? " minutos e " : " minuto e ") : "") + ss + (ss == 1 ? " segundo. " : " segundos. ") +
+                "Ritmo médio, " + am + " e " + String.format(Locale.US, "%02d", as) + ".";
         tts.speak(txt, TextToSpeech.QUEUE_ADD, null, "km" + km);
     }
 
@@ -440,7 +444,7 @@ public class TrackingService extends Service implements LocationListener {
         long el = nowElapsed();
         double avg = km > 0.02 ? el / 1000.0 / km : Double.NaN;
         String title = ("paused".equals(state) ? "Pausada · " : "") + String.format(Locale.US, "%.2f km", km).replace('.', ',') + " · " + fmtTime(el);
-        String text = "Pace " + fmtPace(paceNow()) + " /km · médio " + fmtPace(avg) + " /km";
+        String text = "paused".equals(state) ? "Toque para voltar à corrida" : "Ritmo " + fmtPace(paceNow()) + " /km · média " + fmtPace(avg) + " /km";
         return new NotificationCompat.Builder(this, CH_ID)
                 .setSmallIcon(R.drawable.ic_stat_run)
                 .setContentTitle(title)

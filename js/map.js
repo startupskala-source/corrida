@@ -3,7 +3,7 @@
 // e o tracker usa o desenho em canvas como reserva.
 const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
-const ROUTE_COLOR = '#3ddc84';
+const ROUTE_COLOR = '#a3c48a';
 
 function makeMap(el, opts = {}) {
   const map = L.map(el, { zoomControl: false, attributionControl: true, ...opts });
@@ -31,7 +31,7 @@ function drawRoute(map, points, splits, layer) {
   layer.clearLayers();
   if (!points.length) return;
   L.polyline(toSegments(points), { color: ROUTE_COLOR, weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layer);
-  L.circleMarker([points[0].lat, points[0].lon], { radius: 6, color: '#0f1115', weight: 2, fillColor: '#e9ecf1', fillOpacity: 1 }).addTo(layer);
+  L.circleMarker([points[0].lat, points[0].lon], { radius: 6, color: '#131311', weight: 2, fillColor: '#eeece6', fillOpacity: 1 }).addTo(layer);
   (splits || []).forEach(s => { if (s.lat != null) L.marker([s.lat, s.lon], { icon: kmIcon(s.km), interactive: false }).addTo(layer); });
 }
 
@@ -52,8 +52,8 @@ const MapView = {
     if (!this.map) return;
     const ll = [lat, lon];
     if (!this.me) {
-      this.meAcc = L.circle(ll, { radius: acc, color: '#4da3ff', weight: 1, fillColor: '#4da3ff', fillOpacity: .12, interactive: false }).addTo(this.map);
-      this.me = L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#4da3ff', fillOpacity: 1 }).addTo(this.map);
+      this.meAcc = L.circle(ll, { radius: acc, color: '#8fb7d9', weight: 1, fillColor: '#8fb7d9', fillOpacity: .12, interactive: false }).addTo(this.map);
+      this.me = L.circleMarker(ll, { radius: 8, color: '#fff', weight: 3, fillColor: '#8fb7d9', fillOpacity: 1 }).addTo(this.map);
       this.map.setView(ll, 17);
     } else {
       this.me.setLatLng(ll); this.meAcc.setLatLng(ll).setRadius(acc);
@@ -87,12 +87,12 @@ const MapView = {
 
 // Mapa estático para o resumo / histórico (não interativo de propósito: rola a página normalmente)
 function staticRouteMap(el, points, splits) {
-  if (typeof L === 'undefined' || !points.length) { el.innerHTML = '<div class="empty" style="padding:16px">Mapa indisponível</div>'; return null; }
+  if (typeof L === 'undefined' || !points.length) { el.innerHTML = '<div class="empty" style="padding:16px">O mapa precisa de internet</div>'; return null; }
   const map = makeMap(el, { dragging: false, scrollWheelZoom: false, doubleClickZoom: false, touchZoom: false, boxZoom: false, keyboard: false });
   const layer = L.layerGroup().addTo(map);
   drawRoute(map, points, splits, layer);
   const end = points[points.length - 1];
-  L.circleMarker([end.lat, end.lon], { radius: 6, color: '#0f1115', weight: 2, fillColor: ROUTE_COLOR, fillOpacity: 1 }).addTo(layer);
+  L.circleMarker([end.lat, end.lon], { radius: 6, color: '#131311', weight: 2, fillColor: ROUTE_COLOR, fillOpacity: 1 }).addTo(layer);
   map.fitBounds(L.latLngBounds(points.map(p => [p.lat, p.lon])), { padding: [20, 20] });
   setTimeout(() => { map.invalidateSize(); map.fitBounds(L.latLngBounds(points.map(p => [p.lat, p.lon])), { padding: [20, 20] }); }, 80);
   return map;

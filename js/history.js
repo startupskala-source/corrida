@@ -24,7 +24,7 @@ function paceChart(splits) {
     const best = p === min;
     return `<div class="pc-bar${best ? ' best' : ''}" style="width:${W}%"><i style="height:${h}%"></i><b>${i + 1}</b></div>`;
   }).join('');
-  return `<h2>Pace por km</h2><div class="pace-chart">${bars}</div>`;
+  return `<h2>Ritmo por km</h2><div class="pace-chart">${bars}</div>`;
 }
 
 function splitsTable(splits) {
@@ -35,7 +35,7 @@ function splitsTable(splits) {
     total += s.ms;
     return `<tr><td>${s.km}</td><td class="${s.ms === best && splits.length > 1 ? 'best' : ''}">${fmtPace(s.ms / 1000)}</td><td>${fmtTime(total)}</td></tr>`;
   }).join('');
-  return `<h2>Parciais</h2><table><tr><th>Km</th><th>Pace</th><th>Acumulado</th></tr>${rows}</table>`;
+  return `<h2>Quilômetros</h2><table><tr><th>Km</th><th>Ritmo</th><th>Tempo total</th></tr>${rows}</table>`;
 }
 
 function openSummary(run) {
@@ -51,7 +51,7 @@ function openSummary(run) {
       <div class="grid">
         <div class="card"><div class="lbl">Distância</div><div class="val">${fmtNum(run.distance / 1000, 2)}<small>km</small></div></div>
         <div class="card"><div class="lbl">Tempo</div><div class="val">${fmtTime(run.elapsed)}</div></div>
-        <div class="card hl"><div class="lbl">Pace médio</div><div class="val">${fmtPace(avgPace(run))}<small>/km</small></div></div>
+        <div class="card hl"><div class="lbl">Ritmo médio</div><div class="val">${fmtPace(avgPace(run))}<small>/km</small></div></div>
         <div class="card"><div class="lbl">Melhor km</div><div class="val">${best}<small>/km</small></div></div>
       </div>
       ${paceChart(run.splits)}
@@ -63,7 +63,7 @@ function openSummary(run) {
   summaryMap = staticRouteMap(document.getElementById('sumMap'), run.points, run.splits);
   document.getElementById('sumClose').onclick = closeSummary;
   document.getElementById('sumDelete').onclick = async () => {
-    if (!confirm('Apagar esta corrida do aparelho? Não dá para desfazer.')) return;
+    if (!confirm('Apagar esta corrida? Ela sai do aparelho e não volta.')) return;
     await Store.deleteRun(run.id); closeSummary(); renderHistory();
   };
 }
@@ -83,13 +83,13 @@ async function renderHistory() {
     <div class="card"><div class="lbl">Este mês</div><div class="val">${fmtNum(monthKm, 1)}<small>km</small></div></div>
     <div class="card"><div class="lbl">Total</div><div class="val">${fmtNum(totKm, 1)}<small>km</small></div></div>
     <div class="card"><div class="lbl">Corridas</div><div class="val">${runs.length}</div></div>`;
-  if (!runs.length) { wrap.innerHTML = '<div class="empty">Nenhuma corrida salva ainda. Finalize uma corrida e ela aparece aqui.</div>'; return; }
+  if (!runs.length) { wrap.innerHTML = '<div class="empty">Suas corridas ficam guardadas aqui.</div>'; return; }
   wrap.innerHTML = runs.map(r => `
     <button class="run-item" data-id="${r.id}">
       <div class="ri-head"><b>${runTitle(r.id)}</b><span>${fmtDate(r.id)}</span></div>
       <div class="ri-stats">
         <div><small>Distância</small>${fmtNum(r.distance / 1000, 2)} km</div>
-        <div><small>Pace</small>${fmtPace(avgPace(r))} /km</div>
+        <div><small>Ritmo</small>${fmtPace(avgPace(r))} /km</div>
         <div><small>Tempo</small>${fmtTime(r.elapsed)}</div>
       </div>
     </button>`).join('');

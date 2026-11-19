@@ -76,12 +76,12 @@ function showDiag() {
   const el = $('diag');
   if (diag.coarse >= 3) {
     el.className = 'diag bad';
-    el.textContent = `Precisão ±${Math.round(diag.acc)} m: o celular está dando localização APROXIMADA. ` +
-      `Ative "Localização precisa" para este site/navegador nas permissões do celular.`;
+    el.textContent = `A localização está aproximada (±${Math.round(diag.acc)} m). ` +
+      `Ative "Localização precisa" nas permissões do navegador para medir a corrida.`;
     return;
   }
   el.className = 'diag';
-  el.textContent = `Leituras: ${diag.recv} · usadas: ${diag.used}` +
+  el.textContent = `Leituras ${diag.recv} · usadas ${diag.used}` +
     (isFinite(diag.acc) ? ` · ±${Math.round(diag.acc)} m` : '') + (diag.why ? ` · ${diag.why}` : '');
 }
 
@@ -90,13 +90,13 @@ function onPosition(pos) {
   const ts = pos.timestamp || Date.now();
   diag.acc = accuracy;
   diag.coarse = accuracy >= 100 ? diag.coarse + 1 : 0;
-  if (accuracy <= 15) setGps('ok', `GPS ±${Math.round(accuracy)} m`);
-  else setGps('weak', `GPS ±${Math.round(accuracy)} m`);
+  if (accuracy <= 15) setGps('ok', `Sinal bom · ±${Math.round(accuracy)} m`);
+  else setGps('weak', `Sinal fraco · ±${Math.round(accuracy)} m`);
   if (accuracy < 1000) MapView.setPosition(lat, lon, accuracy);
   if (state !== 'running') { showDiag(); return; }
   diag.recv++;
 
-  if (accuracy > MAX_ACCURACY) { diag.why = 'sinal fraco, ignorada'; showDiag(); return; }
+  if (accuracy > MAX_ACCURACY) { diag.why = 'sinal fraco, descartada'; showDiag(); return; }
 
   if (speed != null && isFinite(speed) && accuracy <= 30) {
     gpsSpeeds.push({ ts, v: speed });
@@ -146,15 +146,15 @@ function onPosition(pos) {
 }
 
 function onGeoError(err) {
-  const msg = { 1: 'Permissão de GPS negada', 2: 'GPS indisponível', 3: 'GPS sem sinal' }[err.code] || 'Erro de GPS';
+  const msg = { 1: 'Sem permissão de localização', 2: 'GPS indisponível', 3: 'Sem sinal' }[err.code] || 'Sinal indisponível';
   setGps('', msg);
 }
 
 function startGps() {
   if (NATIVE) return;
-  if (!('geolocation' in navigator)) { setGps('', 'Sem GPS neste aparelho'); return; }
+  if (!('geolocation' in navigator)) { setGps('', 'Este aparelho não tem GPS'); return; }
   if (watchId !== null) return;
-  setGps('weak', 'Procurando GPS…');
+  setGps('weak', 'Procurando sinal…');
   watchId = navigator.geolocation.watchPosition(onPosition, onGeoError,
     { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 });
 }
@@ -187,7 +187,7 @@ function announce(km, ms) {
   const avg = currentElapsed() / 1000 / (distance / 1000);
   const am = Math.floor(avg / 60), as = Math.round(avg % 60);
   const u = new SpeechSynthesisUtterance(
-    `${km} quilômetro${km > 1 ? 's' : ''}. Parcial ${m} minutos e ${ss} segundos. Pace médio ${am} e ${as}.`);
+    `${km} quilômetro${km > 1 ? 's' : ''}. Esse levou ${m ? m + ' minuto' + (m > 1 ? 's' : '') + ' e ' : ''}${ss} segundo${ss === 1 ? '' : 's'}. Ritmo médio, ${am} e ${String(as).padStart(2, '0')}.`);
   u.lang = 'pt-BR';
   speechSynthesis.speak(u);
   if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
@@ -269,20 +269,20 @@ function render() {
     bar.style.left = pct >= 0 ? '50%' : `${50 + pct}%`;
     bar.style.width = `${Math.abs(pct)}%`;
     const sec = Math.round(Math.abs(diff));
-    txt.textContent = sec < 3 ? 'No ritmo da média' :
-      `${sec}s/km ${diff > 0 ? 'mais rápido' : 'mais lento'} que a média`;
+    txt.textContent = sec < 3 ? 'No seu ritmo médio' :
+      `${sec} s/km ${diff > 0 ? 'mais rápido' : 'mais lento'} que sua média`;
   } else { bar.style.width = '0'; txt.textContent = ''; }
 }
 
 function renderSplits() {
-  if (!splits.length) { $('splitsWrap').innerHTML = '<div class="empty">Os parciais aparecem a cada quilômetro.</div>'; return; }
+  if (!splits.length) { $('splitsWrap').innerHTML = '<div class="empty">Cada quilômetro aparece aqui.</div>'; return; }
   const best = Math.min(...splits.map(s => s.ms));
   let total = 0;
   const rows = splits.map(s => {
     total += s.ms;
     return `<tr><td>${s.km}</td><td class="${s.ms === best && splits.length > 1 ? 'best' : ''}">${fmtPace(s.ms / 1000)}</td><td>${fmtTime(total)}</td></tr>`;
   }).reverse().join('');
-  $('splitsWrap').innerHTML = `<table><tr><th>Km</th><th>Pace</th><th>Acumulado</th></tr>${rows}</table>`;
+  $('splitsWrap').innerHTML = `<table><tr><th>Km</th><th>Ritmo</th><th>Tempo total</th></tr>${rows}</table>`;
 }
 
 function draw() {
@@ -299,8 +299,8 @@ function drawCanvas() {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, w, h);
   if (points.length < 1) {
-    ctx.fillStyle = '#8a92a3'; ctx.font = '13px system-ui'; ctx.textAlign = 'center';
-    ctx.fillText('O trajeto aparece aqui', w / 2, h / 2); return;
+    ctx.fillStyle = '#9b978d'; ctx.font = '13px system-ui'; ctx.textAlign = 'center';
+    ctx.fillText('Seu trajeto aparece aqui', w / 2, h / 2); return;
   }
   const lat0 = points[0].lat, k = Math.cos(lat0 * Math.PI / 180);
   const xs = points.map(p => p.lon * k), ys = points.map(p => p.lat);
@@ -310,12 +310,12 @@ function drawCanvas() {
   const ox = (w - (maxX - minX) * sc) / 2, oy = (h - (maxY - minY) * sc) / 2;
   const X = i => ox + (xs[i] - minX) * sc, Y = i => h - (oy + (ys[i] - minY) * sc);
 
-  ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#3ddc84';
+  ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#a3c48a';
   ctx.beginPath();
   points.forEach((p, i) => { if (i === 0 || p.brk) ctx.moveTo(X(i), Y(i)); else ctx.lineTo(X(i), Y(i)); });
   ctx.stroke();
   const dot = (i, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(X(i), Y(i), 6, 0, 7); ctx.fill(); };
-  dot(0, '#e9ecf1'); dot(points.length - 1, '#3ddc84');
+  dot(0, '#eeece6'); dot(points.length - 1, '#a3c48a');
 }
 
 // ---------- Persistência (recupera se o navegador fechar) ----------
@@ -330,7 +330,7 @@ function restore() {
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null');
     if (!s || Date.now() - s.savedAt > 6 * 3600 * 1000) return;
-    if (!confirm(`Há uma corrida não finalizada (${fmtNum(s.distance / 1000, 2)} km). Continuar?`)) {
+    if (!confirm(`Ficou uma corrida aberta (${fmtNum(s.distance / 1000, 2)} km). Quer continuar de onde parou?`)) {
       localStorage.removeItem(SAVE_KEY); return;
     }
     ({ points, distance, elapsedMs, splits, lastSplitMs, lastSplitDist } = s);
@@ -350,7 +350,7 @@ document.addEventListener('visibilitychange', () => {
 // ---------- Controles ----------
 function setButtons() {
   $('btnStart').classList.toggle('hidden', state === 'running');
-  $('btnStart').textContent = state === 'paused' ? 'CONTINUAR' : 'INICIAR';
+  $('btnStart').textContent = state === 'paused' ? 'Continuar' : 'Começar';
   $('btnPause').classList.toggle('hidden', state !== 'running');
   $('btnStop').classList.toggle('hidden', state !== 'paused');
 }
@@ -375,10 +375,10 @@ $('btnPause').onclick = () => {
 };
 
 $('btnStop').onclick = () => {
-  if (!confirm('Finalizar a corrida?')) return;
+  if (!confirm('Encerrar a corrida?')) return;
   state = 'idle';
   if (watchId !== null) { navigator.geolocation.clearWatch(watchId); watchId = null; }
-  setGps('', 'GPS desligado');
+  setGps('', 'Sem sinal');
   localStorage.removeItem(SAVE_KEY);
   setButtons();
   finishRun({ distance, elapsed: elapsedMs, splits, points });
@@ -393,10 +393,10 @@ function finishRun(r) {
     points: r.points.map(p => ({ lat: +(+p.lat).toFixed(6), lon: +(+p.lon).toFixed(6), t: Math.round(p.t), d: Math.round(p.d * 10) / 10, brk: p.brk || undefined }))
   };
   MapView.fit(r.points);
-  if (r.distance < 50) { alert('Corrida muito curta (menos de 50 m) — não foi salva.'); return; }
+  if (r.distance < 50) { alert('Corrida curta demais para guardar (menos de 50 m).'); return; }
   Store.saveRun(run)
     .then(() => { renderHistory(); openSummary(run); })
-    .catch(() => alert('Não consegui salvar a corrida no aparelho.'));
+    .catch(() => alert('Não deu para guardar a corrida no aparelho.'));
 };
 
 // ---------- Mapa: centralizar / tela cheia ----------
@@ -418,6 +418,15 @@ document.querySelectorAll('.tab').forEach(b => b.onclick = () => {
 
 window.addEventListener('resize', draw);
 if (!NATIVE && 'serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
+// Boas-vindas: só na primeira abertura. O modo nativo espera isto antes de pedir permissões.
+const WELCOME_KEY = 'passada_boasvindas';
+window.welcomeDone = new Promise(resolve => {
+  if (localStorage.getItem(WELCOME_KEY)) return resolve();
+  if (!NATIVE) $('wlNote').textContent = 'Em seguida o navegador pede para usar a localização.';
+  $('welcome').classList.remove('hidden');
+  $('wlGo').onclick = () => { localStorage.setItem(WELCOME_KEY, '1'); $('welcome').classList.add('hidden'); resolve(); };
+});
+
 MapView.init($('map'));
 draw(); render();
 if (!NATIVE) restore();
