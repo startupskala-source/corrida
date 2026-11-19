@@ -3,7 +3,8 @@
 // e o tracker usa o desenho em canvas como reserva.
 const TILE_URL = 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
 const TILE_ATTR = '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>';
-const ROUTE_COLOR = '#a3c48a';
+const ROUTE_COLOR = '#3fc45f';        // verde do trajeto (forte, lê bem sobre o mapa)
+const ROUTE_CASE = 'rgba(10,12,10,.55)'; // contorno escuro fino que destaca o traço
 
 function makeMap(el, opts = {}) {
   const map = L.map(el, { zoomControl: false, attributionControl: true, ...opts });
@@ -30,8 +31,10 @@ function kmIcon(n) {
 function drawRoute(map, points, splits, layer) {
   layer.clearLayers();
   if (!points.length) return;
-  L.polyline(toSegments(points), { color: ROUTE_COLOR, weight: 5, opacity: .95, lineCap: 'round', lineJoin: 'round' }).addTo(layer);
-  L.circleMarker([points[0].lat, points[0].lon], { radius: 6, color: '#131311', weight: 2, fillColor: '#eeece6', fillOpacity: 1 }).addTo(layer);
+  const segs = toSegments(points);
+  L.polyline(segs, { color: ROUTE_CASE, weight: 10, opacity: 1, lineCap: 'round', lineJoin: 'round', smoothFactor: 1.5, interactive: false }).addTo(layer);
+  L.polyline(segs, { color: ROUTE_COLOR, weight: 6, opacity: 1, lineCap: 'round', lineJoin: 'round', smoothFactor: 1.5, interactive: false }).addTo(layer);
+  L.circleMarker([points[0].lat, points[0].lon], { radius: 7, color: ROUTE_COLOR, weight: 3, fillColor: '#ffffff', fillOpacity: 1 }).addTo(layer);
   (splits || []).forEach(s => { if (s.lat != null) L.marker([s.lat, s.lon], { icon: kmIcon(s.km), interactive: false }).addTo(layer); });
 }
 
@@ -135,7 +138,7 @@ function staticRouteMap(el, points, splits) {
   const layer = L.layerGroup().addTo(map);
   drawRoute(map, points, splits, layer);
   const end = points[points.length - 1];
-  L.circleMarker([end.lat, end.lon], { radius: 6, color: '#131311', weight: 2, fillColor: ROUTE_COLOR, fillOpacity: 1 }).addTo(layer);
+  L.circleMarker([end.lat, end.lon], { radius: 7, color: '#ffffff', weight: 3, fillColor: ROUTE_COLOR, fillOpacity: 1 }).addTo(layer);
   map.fitBounds(L.latLngBounds(points.map(p => [p.lat, p.lon])), { padding: [20, 20] });
   setTimeout(() => { map.invalidateSize(); map.fitBounds(L.latLngBounds(points.map(p => [p.lat, p.lon])), { padding: [20, 20] }); }, 80);
   return map;

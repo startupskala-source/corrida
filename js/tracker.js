@@ -323,12 +323,12 @@ function drawCanvas() {
   const ox = (w - (maxX - minX) * sc) / 2, oy = (h - (maxY - minY) * sc) / 2;
   const X = i => ox + (xs[i] - minX) * sc, Y = i => h - (oy + (ys[i] - minY) * sc);
 
-  ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#a3c48a';
+  ctx.lineWidth = 6; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = '#3fc45f';
   ctx.beginPath();
   points.forEach((p, i) => { if (i === 0 || p.brk) ctx.moveTo(X(i), Y(i)); else ctx.lineTo(X(i), Y(i)); });
   ctx.stroke();
   const dot = (i, c) => { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(X(i), Y(i), 6, 0, 7); ctx.fill(); };
-  dot(0, '#eeece6'); dot(points.length - 1, '#a3c48a');
+  dot(0, '#ffffff'); dot(points.length - 1, '#3fc45f');
 }
 
 // ---------- Persistência (recupera se o navegador fechar) ----------

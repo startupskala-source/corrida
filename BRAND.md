@@ -27,10 +27,11 @@ Um app de corrida que mede bem e fala pouco. Não torce, não cobra, não exager
 | Linha | Cascalho | `#2C2A26` |
 | Texto | Areia | `#EEECE6` |
 | Texto secundário | Folha seca | `#9B978D` |
-| Destaque (trajeto, ritmo, começar) | Sálvia | `#A3C48A` |
+| Destaque (ritmo, começar) | Sálvia | `#A3C48A` |
 | Atenção (pausar, sinal fraco) | Ocre | `#D8A85A` |
 | Encerrar / erro | Terracota | `#CF6F55` |
 | Você no mapa | Céu | `#8FB7D9` |
+| Traço do trajeto no mapa (6 px, contorno escuro fino) | Verde trajeto | `#3FC45F` |
 
 Regras: fundo sempre escuro e quente (lê bem no sol e não ofusca à noite); só um destaque por tela; sem gradiente forte, sem brilho, sem animação contínua.
 

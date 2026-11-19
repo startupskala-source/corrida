@@ -207,7 +207,7 @@ td.best { color: var(--acc); font-weight: 700; }
 .leaflet-control-attribution a { color: #bdb9ae !important; }
 #viewRun .leaflet-bottom { bottom: calc(var(--sheet-h) + var(--nav-h) + var(--safe-b)); }
 .km-mark span { display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%;
-  background: #131311; color: var(--acc); border: 2px solid var(--acc); font: 700 11px system-ui; }
+  background: #131311; color: #3fc45f; border: 2px solid #3fc45f; font: 700 11px system-ui; }
 /* Você no mapa: ponto azul com seta de direção e um anel que respira */
 .me { position: relative; width: 44px; height: 44px; }
 .me .ring { position: absolute; inset: 8px; border-radius: 50%; background: var(--sky); opacity: .35; animation: breathe 2.4s ease-out infinite; }
